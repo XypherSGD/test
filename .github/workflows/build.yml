@@ -11,26 +11,34 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build | Out-Null
-          $kit = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory |
-                 Sort-Object Name -Descending | Select-Object -First 1
-          if (-not (Test-Path "$($kit.FullName)\km")) { throw "WDK not found on runner" }
-          $env:INCLUDE = "$($kit.FullName)\km;$($kit.FullName)\um;$($kit.FullName)\shared"
-          $lib = $kit.FullName -replace '\\Include', '\Lib'
-          $env:LIB = "$lib\km\x64;$lib\um\x64"
+
+          # Get the exact SDK version installed on the runner (e.g. 10.0.26100.0)
+          $version = $env:WindowsSDKVersion 
           
-          Write-Host "Compiling driver..."
+          # Construct the guaranteed paths for headers and libs
+          $includePath = "C:\Program Files (x86)\Windows Kits\10\Include\$version\km"
+          $libPath = "C:\Program Files (x86)\Windows Kits\10\Lib\$version\km\x64"
+
+          Write-Host "Using SDK Version: $version"
+          Write-Host "Headers at: $includePath"
+
+          # Set environment variables for the compiler
+          $env:INCLUDE = "$includePath"
+          $env:LIB = "$libPath;C:\Program Files (x86)\Windows Kits\10\Lib\$version\um\x64"
+
+          # Compile the driver
           cl /c /W4 driver\driver.c /Fo:build\driver.obj
+          if ($LASTEXITCODE -ne 0) { throw "Driver compilation failed" }
+
+          # Link the driver
           link /OUT:build\driver.sys /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /MACHINE:X64 /DRIVER build\driver.obj ntoskrnl.lib hal.lib
-          
-          Write-Host "Compiled driver.sys successfully"
+          if ($LASTEXITCODE -ne 0) { throw "Driver linking failed" }
+
+          Write-Host "Driver built successfully!"
 
       - name: Build cheat.exe
-        shell: pwsh
         run: |
-          Write-Host "Compiling cheat..."
           cl /EHsc /O2 /W3 /DUNICODE /D_UNICODE cheat\main.cpp /Fe:build\cheat.exe /link user32.lib gdi32.lib
-          
-          Write-Host "Compiled cheat.exe successfully"
 
       - uses: actions/upload-artifact@v4
         with:
