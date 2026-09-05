@@ -1,17 +1,38 @@
-name: Generic Windows Build
-on: [push]
-
+name: Build
+on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
 
-      # Setup MSBuild path
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+      - name: Build driver.sys
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          $kit = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory |
+                 Sort-Object Name -Descending | Select-Object -First 1
+          if (-not (Test-Path "$($kit.FullName)\km")) { throw "WDK not found on runner" }
+          $env:INCLUDE = "$($kit.FullName)\km;$($kit.FullName)\um;$($kit.FullName)\shared"
+          $lib = $kit.FullName -replace '\\Include', '\Lib'
+          $env:LIB = "$lib\km\x64;$lib\um\x64"
+          
+          Write-Host "Compiling driver..."
+          cl /c /W4 driver\driver.c /Fo:build\driver.obj
+          link /OUT:build\driver.sys /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /MACHINE:X64 /DRIVER build\driver.obj ntoskrnl.lib hal.lib
+          
+          Write-Host "Compiled driver.sys successfully"
 
-      # Compile using the project configuration rather than raw flags
-      - name: Build Solution
-        run: msbuild MyProject.sln /p:Configuration=Release /p:Platform=x64
+      - name: Build cheat.exe
+        shell: pwsh
+        run: |
+          Write-Host "Compiling cheat..."
+          cl /EHsc /O2 /W3 /DUNICODE /D_UNICODE cheat\main.cpp /Fe:build\cheat.exe /link user32.lib gdi32.lib
+          
+          Write-Host "Compiled cheat.exe successfully"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cheat
+          path: build/
