@@ -1,0 +1,20 @@
+name: Build
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build driver
+        run: |
+          mkdir build
+          cl /c /W4 /Zi driver/driver.c /Fo:build/driver.obj
+          link /OUT:build/driver.sys /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /MACHINE:X64 /DRIVER build/driver.obj ntoskrnl.lib hal.lib
+      - name: Build usermode app
+        run: |
+          cl /EHsc /O2 /W3 /DUNICODE /D_UNICODE cheat/main.cpp /Fe:build/cheat.exe /link user32.lib gdi32.lib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cheat
+          path: build/
