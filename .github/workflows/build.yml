@@ -12,29 +12,30 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path build | Out-Null
 
-          # Get the exact SDK version installed on the runner (e.g. 10.0.26100.0)
-          $version = $env:WindowsSDKVersion 
+          # Get the exact SDK version installed on the runner
+          $version = $env:WindowsSDKVersion
           
-          # Construct the guaranteed paths for headers and libs
-          $includePath = "C:\Program Files (x86)\Windows Kits\10\Include\$version\km"
-          $libPath = "C:\Program Files (x86)\Windows Kits\10\Lib\$version\km\x64"
+          # Construct the guaranteed paths
+          $kmPath = "C:\Program Files (x86)\Windows Kits\10\Include\$version\km"
+          $libKm = "C:\Program Files (x86)\Windows Kits\10\Lib\$version\km\x64"
+          
+          Write-Host "SDK Path: $kmPath"
 
-          Write-Host "Using SDK Version: $version"
-          Write-Host "Headers at: $includePath"
+          # 1. Append the KM path to the existing INCLUDE variable (don't overwrite)
+          $env:INCLUDE = "$kmPath;$env:INCLUDE"
+          
+          # 2. Pass the LIB path to the linker
+          $env:LIB = "$libKm;$env:LIB"
 
-          # Set environment variables for the compiler
-          $env:INCLUDE = "$includePath"
-          $env:LIB = "$libPath;C:\Program Files (x86)\Windows Kits\10\Lib\$version\um\x64"
-
-          # Compile the driver
-          cl /c /W4 driver\driver.c /Fo:build\driver.obj
+          # 3. Compile with explicit include flag as a backup
+          cl /c /W4 /I"$kmPath" driver\driver.c /Fo:build\driver.obj
           if ($LASTEXITCODE -ne 0) { throw "Driver compilation failed" }
 
-          # Link the driver
+          # 4. Link the driver
           link /OUT:build\driver.sys /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /MACHINE:X64 /DRIVER build\driver.obj ntoskrnl.lib hal.lib
           if ($LASTEXITCODE -ne 0) { throw "Driver linking failed" }
 
-          Write-Host "Driver built successfully!"
+          Write-Host "✅ Driver built successfully!"
 
       - name: Build cheat.exe
         run: |
